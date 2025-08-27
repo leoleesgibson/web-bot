@@ -5,6 +5,9 @@ import asyncio
 import random
 import pyautogui
 
+# Disable PyAutoGUI fail-safe for automated browsing
+pyautogui.FAILSAFE = False
+
 async def human_click_with_retry(page, element, session_id: str, max_retries: int = 3):
     """
     Human-like click with retry logic - like when humans try again after failed clicks

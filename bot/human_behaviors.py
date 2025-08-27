@@ -5,6 +5,9 @@ import asyncio
 import random
 import pyautogui
 
+# Disable PyAutoGUI fail-safe for automated browsing
+pyautogui.FAILSAFE = False
+
 async def realistic_typing_with_mistakes(page, text: str, session_id: str):
     """Type text with realistic human mistakes and corrections"""
     print(f"[{session_id}] 🎭 Typing with human-like mistakes...")

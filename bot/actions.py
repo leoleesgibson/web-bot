@@ -2,6 +2,10 @@ import asyncio
 import random
 import pyautogui
 import time
+
+# Disable PyAutoGUI fail-safe for automated browsing
+pyautogui.FAILSAFE = False
+
 from .human_behaviors import (
     realistic_typing_with_mistakes, 
     random_mouse_movements,
@@ -264,14 +268,21 @@ async def browse_like_human(page, session_duration_minutes=5, session_id="sessio
         
         elif action_choice < 0.95:  # 10% - Wasted/distracted actions
             await wasted_click_actions(page, session_id)
-            await random_mouse_movements(session_id, random.randint(2, 5))
+            # Skip mouse movements for mobile (touch-based)
+            try:
+                await random_mouse_movements(session_id, random.randint(2, 5))
+            except Exception as e:
+                print(f"[{session_id}] 📱 Skipping mouse movement (mobile device): {str(e)[:50]}...")
             
         else:  # 5% - Random page interactions
             await random_page_interactions(page, session_id)
         
-        # Occasionally do random mouse movements (fidgeting)
+        # Occasionally do random mouse movements (fidgeting) - mobile safe
         if random.random() < 0.15:
-            await random_mouse_movements(session_id, random.randint(1, 3))
+            try:
+                await random_mouse_movements(session_id, random.randint(1, 3))
+            except Exception as e:
+                print(f"[{session_id}] 📱 Skipping mouse movement (mobile device): {str(e)[:50]}...")
     
     # End of session - final human-like action
     if random.random() < 0.3:

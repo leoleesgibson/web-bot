@@ -179,22 +179,24 @@ async def run_continuous_mobile_sessions():
             print(f"   ⏱️ Total runtime: {total_time:.1f} minutes")
             print(f"   📈 Success rate: {(total_successful_sessions/total_sessions)*100:.1f}%")
             
-            # Randomized pause between proxy sessions (5-20 minutes)
-            pause_minutes = random.uniform(5.0, 20.0)
+            # Randomized pause between proxy sessions (30 seconds to 2 minutes)
+            pause_minutes = random.uniform(0.5, 2.0)
             pause_seconds = pause_minutes * 60
             print(f"\n⏸️ IP rotation pause: {pause_minutes:.1f} minutes before next proxy session...")
             
-            # Show countdown every 60 seconds during long pauses
-            if pause_seconds > 120:
+            # Show countdown for pauses
+            if pause_seconds > 30:
                 remaining = pause_seconds
                 while remaining > 0:
-                    if remaining > 120:
-                        print(f"   ⏳ {remaining/60:.1f} minutes remaining...")
-                        await asyncio.sleep(60)
-                        remaining -= 60
+                    if remaining > 60:
+                        print(f"   ⏳ {remaining:.0f} seconds remaining...")
+                        sleep_time = min(15, remaining)  # Update every 15 seconds
                     else:
-                        await asyncio.sleep(remaining)
-                        break
+                        print(f"   ⏳ {remaining:.0f} seconds remaining...")
+                        sleep_time = remaining
+                    
+                    await asyncio.sleep(sleep_time)
+                    remaining -= sleep_time
             else:
                 await asyncio.sleep(pause_seconds)
                         
