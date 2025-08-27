@@ -1,0 +1,6 @@
+2025/08/27-06:34:39.406 1674 Reusing MANIFEST C:\Users\sarlee\Desktop\web-bot\web-bot\user_data\Default\Local Storage\leveldb/MANIFEST-000001
+2025/08/27-06:34:39.414 1674 Recovering log #4
+2025/08/27-06:34:39.420 1674 Reusing old log C:\Users\sarlee\Desktop\web-bot\web-bot\user_data\Default\Local Storage\leveldb/000004.log 
+2025/08/27-06:35:27.359 3108 Level-0 table #7: started
+2025/08/27-06:35:27.409 3108 Level-0 table #7: 11563 bytes OK
+2025/08/27-06:35:27.447 3108 Delete type=0 #4
