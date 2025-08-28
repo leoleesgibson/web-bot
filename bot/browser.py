@@ -5,7 +5,8 @@ import tempfile
 import uuid
 from playwright.async_api import async_playwright
 from fake_useragent import UserAgent
-from .mobile_user_agents import get_mobile_user_agent, get_mobile_screen_resolution, get_mobile_platform_info, get_mobile_touch_capabilities
+from .device_manager import get_device_simulation_settings, get_device_description
+import config
 
 class BrowserManager:
     def __init__(self, headless: bool = False, use_proxy: bool = True, session_id: str | None = None):
@@ -30,14 +31,14 @@ class BrowserManager:
             try:
                 import requests
                 proxies = {
-                    "http": "http://zruqbalk-rotate:z29qfcd8flic@p.webshare.io:80",
-                    "https": "http://zruqbalk-rotate:z29qfcd8flic@p.webshare.io:80"
+                    "http": f"http://{config.PROXY_USERNAME}:{config.PROXY_PASSWORD}@{config.PROXY_SERVER}/",
+                    "https": f"http://{config.PROXY_USERNAME}:{config.PROXY_PASSWORD}@{config.PROXY_SERVER}/"
                 }
                 
                 response = requests.get(
-                    "https://httpbin.org/ip", 
+                    config.PROXY_VERIFICATION_URL, 
                     proxies=proxies, 
-                    timeout=15
+                    timeout=config.PROXY_TIMEOUT
                 )
                 
                 if response.status_code == 200:
@@ -70,13 +71,16 @@ class BrowserManager:
         # Create a temporary user data directory for each session
         temp_dir = tempfile.mkdtemp(prefix=f"bot_{self.session_id}_")
 
-        # Get realistic mobile user agent and matching device specs
-        user_agent, browser_name = get_mobile_user_agent()
-        screen_width, screen_height = get_mobile_screen_resolution(user_agent)
-        platform_info = get_mobile_platform_info(user_agent)
-        touch_info = get_mobile_touch_capabilities()
+        # Get device simulation settings (mobile or desktop based on config)
+        device_info = get_device_simulation_settings()
+        user_agent = device_info["user_agent"]
+        screen_width = device_info["screen_width"] 
+        screen_height = device_info["screen_height"]
+        platform_info = device_info["platform_info"]
+        browser_context_options_extra = device_info["browser_context_options"]
         
-        print(f"[{self.session_id}] 📱 Using {browser_name} mobile: {platform_info['device']} ({screen_width}x{screen_height}), {platform_info['memory']}GB RAM")
+        device_description = get_device_description(device_info)
+        print(f"[{self.session_id}] {device_description}")
 
         # Launch browser with fresh session
         self.browser = await self.playwright.chromium.launch(
@@ -104,7 +108,7 @@ class BrowserManager:
             ]
         )
 
-        # Create context with mobile device simulation and proxy settings
+        # Create context with device simulation and proxy settings
         context_options = {
             "viewport": {
                 "width": screen_width,
@@ -113,20 +117,27 @@ class BrowserManager:
             "user_agent": user_agent,
             "locale": "en-US",
             "timezone_id": "America/New_York",
-            "is_mobile": True,  # Enable mobile simulation
-            "has_touch": True,  # Enable touch events
-            "device_scale_factor": random.choice([1, 2, 3])  # Realistic DPI scaling
+            **browser_context_options_extra  # Add mobile/desktop specific options
         }
 
         if self.use_proxy:
             context_options["proxy"] = {
-                "server": "http://p.webshare.io:80",
-                "username": "zruqbalk-rotate",
-                "password": "z29qfcd8flic"
+                "server": f"http://{config.PROXY_SERVER}",
+                "username": config.PROXY_USERNAME,
+                "password": config.PROXY_PASSWORD
             }
 
         self.context = await self.browser.new_context(**context_options)
         self.page = await self.context.new_page()
+        
+        # Extract values for fingerprinting
+        max_touch_points = device_info["input_capabilities"].get('maxTouchPoints', 0)
+        device_pixel_ratio = device_info.get('devicePixelRatio', 1)
+        gpu_vendor = device_info.get('gpuVendor', 'Intel Inc.')
+        gpu_renderer = device_info.get('gpuRenderer', 'Intel(R) UHD Graphics 620')
+        device_memory = platform_info.get('memory', 8)
+        hardware_concurrency = platform_info.get('cores', 8)
+        platform_name = platform_info.get('platform', 'Win32')
         
         # Hide automation detection with comprehensive fingerprint spoofing
         fingerprint_script = f"""
@@ -187,8 +198,8 @@ class BrowserManager:
             // Spoof WebGL fingerprinting consistently
             const getParameter = WebGLRenderingContext.prototype.getParameter;
             WebGLRenderingContext.prototype.getParameter = function(parameter) {{
-                if (parameter === 37445) return 'Intel Inc.'; // UNMASKED_VENDOR_WEBGL
-                if (parameter === 37446) return 'Intel(R) UHD Graphics 620'; // UNMASKED_RENDERER_WEBGL
+                if (parameter === 37445) return '{gpu_vendor}'; // UNMASKED_VENDOR_WEBGL
+                if (parameter === 37446) return '{gpu_renderer}'; // UNMASKED_RENDERER_WEBGL
                 if (parameter === 7936) return 'WebGL 1.0 (OpenGL ES 2.0 Chromium)'; // VERSION
                 if (parameter === 7937) return 'WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)'; // SHADING_LANGUAGE_VERSION
                 return getParameter.apply(this, arguments);
@@ -218,34 +229,35 @@ class BrowserManager:
             
             // Spoof hardware specs to match user agent
             Object.defineProperty(navigator, 'deviceMemory', {{
-                get: () => {platform_info['memory']}, // Match UA specs
+                get: () => {device_memory} // Match UA specs
             }});
             Object.defineProperty(navigator, 'hardwareConcurrency', {{
-                get: () => {platform_info['cores']}, // Match UA specs  
+                get: () => {hardware_concurrency} // Match UA specs  
             }});
             
-            // Mobile-specific touch capabilities
+            // Touch capabilities (mobile/desktop aware)
             Object.defineProperty(navigator, 'maxTouchPoints', {{
-                get: () => {touch_info['maxTouchPoints']}
+                get: () => {max_touch_points}
             }});
             
-            // Mobile device orientation
-            Object.defineProperty(screen, 'orientation', {{
-                get: () => ({{
-                    type: 'portrait-primary',
-                    angle: 0
-                }})
-            }});
-            
-            // Mobile device pixel ratio
+            // Device pixel ratio
             Object.defineProperty(window, 'devicePixelRatio', {{
-                get: () => {random.choice([1, 2, 3])}
+                get: () => {device_pixel_ratio}
             }});
             
-            // Mobile platform detection
+            // Platform detection
             Object.defineProperty(navigator, 'platform', {{
-                get: () => '{platform_info['platform']}'
+                get: () => '{platform_name}'
             }});
+            
+            // Add mobile-specific features if device is mobile
+            {("// Mobile device orientation\\n" + 
+              "Object.defineProperty(screen, 'orientation', {\\n" +
+              "    get: () => ({\\n" +
+              "        type: 'portrait-primary',\\n" +
+              "        angle: 0\\n" +
+              "    })\\n" +
+              "});") if device_info["device_type"] == "mobile" else ""}
             
             // Spoof screen dimensions to match viewport
             Object.defineProperty(screen, 'width', {{ get: () => {screen_width} }});

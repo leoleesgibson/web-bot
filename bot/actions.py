@@ -2,6 +2,7 @@ import asyncio
 import random
 import pyautogui
 import time
+import config
 
 # Disable PyAutoGUI fail-safe for automated browsing
 pyautogui.FAILSAFE = False
@@ -101,15 +102,38 @@ async def human_like_click(page, element):
 async def smart_click_random_article(page, session_id: str):
     """
     Enhanced article clicking with smart retry and multiple fallbacks
+    Uses configuration settings for behavior customization
     """
-    # Multiple strategies for finding articles
-    article_selectors = [
+    if not config.ENABLE_ARTICLE_CLICKING:
+        print(f"[{session_id}] ⚠️ Article clicking disabled in config")
+        return False
+        
+    # Check probability of clicking articles
+    if random.random() > config.ARTICLE_CLICK_PROBABILITY:
+        print(f"[{session_id}] 🎲 Skipping article click based on probability")
+        return False
+    
+    # Multiple strategies for finding articles with preference for recent ones
+    base_selectors = [
         "a[href*='article']", "a[href*='news']", "a[href*='story']", 
         ".article-title a", ".news-title a", ".post-title a",
         "article a", ".entry-title a", "h1 a", "h2 a", "h3 a",
-        "[class*='headline'] a", "[class*='title'] a",
-        "a[href*='/20']"  # Date-based URLs
+        "[class*='headline'] a", "[class*='title'] a"
     ]
+    
+    # Add date-based selectors if preferring recent articles
+    if config.PREFER_RECENT_ARTICLES:
+        current_year = time.strftime('%Y')
+        recent_selectors = [
+            f"a[href*='/{current_year}/']",
+            f"a[href*='-{current_year}-']",
+            "a[href*='/20']",  # Generic recent date pattern
+        ]
+        article_selectors = recent_selectors + base_selectors
+    else:
+        article_selectors = base_selectors
+    
+    print(f"[{session_id}] 🎯 Looking for articles to click...")
     
     # Try smart element finder
     target_element = await smart_element_finder(page, article_selectors, session_id, timeout=8000)
@@ -118,73 +142,223 @@ async def smart_click_random_article(page, session_id: str):
         print(f"[{session_id}] ❌ No articles found with smart finder")
         return False
     
+    # Get article URL for logging
+    try:
+        article_url = await target_element.get_attribute('href')
+        article_text = await target_element.text_content()
+        print(f"[{session_id}] 📰 Found article: {(article_text or 'No title')[:50]}...")
+        if article_url:
+            print(f"[{session_id}] 🔗 URL: {article_url[:80]}...")
+    except:
+        pass
+    
     # Try human-like click with retry
     success = await human_click_with_retry(page, target_element, session_id, max_retries=3)
     
     if success:
         # Wait for navigation intelligently
         await intelligent_page_wait(page, session_id, "navigation")
+        print(f"[{session_id}] ✅ Successfully navigated to article")
         return True
     
+    print(f"[{session_id}] ❌ Failed to click article after all retries")
     return False
 
 async def multi_tab_article_reading(page, session_id: str):
     """
-    Simulate opening multiple articles in tabs like real users do
+    Enhanced multi-tab browsing simulation with configurable behavior
+    Opens multiple articles in tabs like real users do
     """
-    print(f"[{session_id}] 📑 Multi-tab browsing simulation...")
+    if not config.ENABLE_MULTI_TAB_BROWSING:
+        print(f"[{session_id}] ⚠️ Multi-tab browsing disabled in config")
+        return False
+    
+    # Check probability of using tabs
+    if random.random() > config.TAB_OPENING_PROBABILITY:
+        print(f"[{session_id}] 🎲 Skipping multi-tab based on probability")
+        return False
+        
+    print(f"[{session_id}] 📑 Starting multi-tab browsing simulation...")
     
     try:
-        # Find multiple articles
-        article_links = await page.query_selector_all("a[href*='article'], a[href*='news'], article a")
+        # Find multiple articles with enhanced selectors
+        article_selectors = [
+            "a[href*='article']", "a[href*='news']", "a[href*='story']",
+            "article a", ".entry-title a", ".post-title a", ".article-title a",
+            "h1 a", "h2 a", "h3 a", "[class*='headline'] a", "[class*='title'] a"
+        ]
         
-        if len(article_links) >= 2:
-            # Open 2-3 articles in new tabs
-            tabs_to_open = min(random.randint(2, 3), len(article_links))
+        # Get all article links
+        all_links = []
+        for selector in article_selectors:
+            try:
+                links = await page.query_selector_all(selector)
+                all_links.extend(links)
+                if len(all_links) >= config.MAX_TABS_TO_OPEN * 2:  # Get more options than needed
+                    break
+            except:
+                continue
+        
+        if len(all_links) < 2:
+            print(f"[{session_id}] ❌ Not enough articles found for multi-tab (found {len(all_links)})")
+            return False
+        
+        # Determine number of tabs to open
+        tabs_to_open = min(random.randint(2, config.MAX_TABS_TO_OPEN), len(all_links))
+        print(f"[{session_id}] 📑 Planning to open {tabs_to_open} tabs from {len(all_links)} available articles")
+        
+        opened_tabs = 0
+        
+        # Open articles in new tabs
+        for i in range(tabs_to_open):
+            try:
+                # Select a random article from remaining links
+                if i < len(all_links):
+                    link = all_links[i]
+                    
+                    # Get article info for logging
+                    try:
+                        href = await link.get_attribute('href')
+                        text = await link.text_content()
+                        print(f"[{session_id}] 📑 Opening tab {i+1}: {(text or 'No title')[:40]}...")
+                        if href:
+                            print(f"[{session_id}] � Tab URL: {href[:60]}...")
+                    except:
+                        pass
+                    
+                    # Open in new tab with Ctrl+Click
+                    await link.click(modifiers=['Control'])
+                    opened_tabs += 1
+                    
+                    # Wait between tab openings
+                    await asyncio.sleep(random.uniform(1.0, 2.5))
+                    
+            except Exception as e:
+                print(f"[{session_id}] ⚠️ Failed to open tab {i+1}: {str(e)[:100]}")
+                continue
+        
+        if opened_tabs == 0:
+            print(f"[{session_id}] ❌ No tabs were successfully opened")
+            return False
             
-            for i in range(tabs_to_open):
-                try:
-                    link = article_links[i]
-                    href = await link.get_attribute('href')
-                    
-                    if href:
-                        # Simulate Ctrl+Click to open in new tab
-                        print(f"[{session_id}] 📑 Opening article {i+1} in new tab...")
-                        await link.click(modifiers=['Control'])
-                        await asyncio.sleep(random.uniform(1.0, 2.5))
-                        
-                except Exception as e:
-                    print(f"[{session_id}] ⚠️ Failed to open tab {i+1}: {e}")
-                    continue
-            
-            # Simulate switching between tabs and reading
-            for i in range(tabs_to_open):
-                try:
-                    # Switch to tab (Ctrl+Tab)
-                    await page.keyboard.press('Control+Tab')
-                    await asyncio.sleep(random.uniform(0.5, 1.0))
-                    
-                    # Read for a bit
-                    read_time = article_reading_time() // 2  # Shorter reading in tabs
-                    print(f"[{session_id}] 📖 Reading tab {i+1} for {read_time}s...")
-                    await simulate_reading_behavior(page, session_id, read_time)
-                    
-                    # Sometimes close tab (Ctrl+W)
-                    if random.random() < 0.6:
-                        print(f"[{session_id}] ❌ Closing tab {i+1}...")
-                        await page.keyboard.press('Control+w')
-                        await asyncio.sleep(random.uniform(0.3, 0.8))
-                        
-                except Exception as e:
-                    print(f"[{session_id}] ⚠️ Tab switching error: {e}")
-                    continue
+        print(f"[{session_id}] ✅ Successfully opened {opened_tabs} tabs")
+        
+        # Simulate realistic tab browsing behavior
+        await simulate_tab_switching_behavior(page, session_id, opened_tabs)
+        
+        return True
         
     except Exception as e:
-        print(f"[{session_id}] ❌ Multi-tab simulation failed: {e}")
+        print(f"[{session_id}] ❌ Multi-tab simulation failed: {str(e)[:100]}")
+        return False
+
+async def simulate_tab_switching_behavior(page, session_id: str, num_tabs: int):
+    """
+    Simulate realistic tab switching and reading behavior
+    """
+    print(f"[{session_id}] 🔄 Simulating tab switching behavior for {num_tabs} tabs...")
+    
+    for i in range(num_tabs):
+        try:
+            # Switch to next tab (Ctrl+Tab)
+            print(f"[{session_id}] 🔄 Switching to tab {i+1}...")
+            await page.keyboard.press('Control+Tab')
+            await asyncio.sleep(random.uniform(0.5, 1.2))
+            
+            # Wait for page to load
+            try:
+                await page.wait_for_load_state('networkidle', timeout=10000)
+            except:
+                await asyncio.sleep(2)  # Fallback wait
+            
+            # Read the article with configurable time
+            read_time = random.randint(config.MIN_TAB_READING_TIME, config.MAX_TAB_READING_TIME)
+            print(f"[{session_id}] 📖 Reading tab {i+1} for {read_time}s...")
+            await simulate_reading_behavior(page, session_id, read_time)
+            
+            # Sometimes scroll during reading
+            if random.random() < 0.7:
+                scroll_time = min(read_time // 3, 20)  # Scroll for part of reading time
+                await random_scroll(page, scroll_time)
+            
+            # Decide whether to close this tab
+            should_close = random.random() < config.TAB_CLOSE_PROBABILITY
+            if should_close and i < num_tabs - 1:  # Don't close the last tab
+                print(f"[{session_id}] ❌ Closing tab {i+1}...")
+                await page.keyboard.press('Control+w')
+                await asyncio.sleep(random.uniform(0.3, 0.8))
+            
+        except Exception as e:
+            print(f"[{session_id}] ⚠️ Tab {i+1} switching error: {str(e)[:100]}")
+            continue
+    
+    print(f"[{session_id}] ✅ Completed tab browsing simulation")
 
 async def click_random_article(page, session_id="session"):
     """Legacy function - now uses smart clicking"""
     return await smart_click_random_article(page, session_id)
+
+async def click_multiple_articles(page, session_id: str):
+    """
+    Click multiple articles in sequence during a single session
+    Uses configuration to determine how many articles to click
+    """
+    if not config.ENABLE_ARTICLE_CLICKING:
+        return 0
+        
+    # Determine how many articles to click
+    articles_to_click = random.randint(config.ARTICLES_TO_CLICK_MIN, config.ARTICLES_TO_CLICK_MAX)
+    print(f"[{session_id}] 🎯 Planning to click {articles_to_click} articles this session")
+    
+    successful_clicks = 0
+    
+    for i in range(articles_to_click):
+        try:
+            print(f"[{session_id}] 📰 Attempting to click article {i+1}/{articles_to_click}...")
+            
+            success = await smart_click_random_article(page, session_id)
+            
+            if success:
+                successful_clicks += 1
+                
+                # Read the article for a realistic amount of time
+                read_time = random.randint(config.ARTICLE_READING_TIME_MIN, config.ARTICLE_READING_TIME_MAX)
+                print(f"[{session_id}] 📖 Reading article {i+1} for {read_time}s...")
+                await simulate_reading_behavior(page, session_id, read_time)
+                
+                # Sometimes scroll during reading
+                if random.random() < 0.8:
+                    scroll_duration = min(read_time // 3, 30)
+                    await random_scroll(page, scroll_duration)
+                
+                # Navigate back to main page for next article (unless it's the last one)
+                if i < articles_to_click - 1:
+                    try:
+                        print(f"[{session_id}] ⬅️ Navigating back to find more articles...")
+                        await page.go_back()
+                        await page.wait_for_load_state('networkidle', timeout=10000)
+                        await asyncio.sleep(random.uniform(1.0, 2.0))
+                    except Exception as e:
+                        print(f"[{session_id}] ⚠️ Failed to go back, navigating to main page: {str(e)[:50]}")
+                        await page.goto(config.TARGET_URL)
+                        await page.wait_for_load_state('networkidle', timeout=15000)
+                        await asyncio.sleep(random.uniform(2.0, 3.0))
+                        
+            else:
+                print(f"[{session_id}] ❌ Failed to click article {i+1}, continuing...")
+                
+            # Add natural pause between article clicks
+            if i < articles_to_click - 1:
+                pause_time = random.uniform(3.0, 8.0)
+                print(f"[{session_id}] ⏳ Pausing {pause_time:.1f}s before next article...")
+                await asyncio.sleep(pause_time)
+                
+        except Exception as e:
+            print(f"[{session_id}] ❌ Error clicking article {i+1}: {str(e)[:100]}")
+            continue
+    
+    print(f"[{session_id}] 📊 Article clicking session complete: {successful_clicks}/{articles_to_click} successful")
+    return successful_clicks
 
 async def browse_like_human(page, session_duration_minutes=5, session_id="session"):
     """
@@ -223,26 +397,54 @@ async def browse_like_human(page, session_duration_minutes=5, session_id="sessio
         print(f"[{session_id}] 🤔 Natural thinking pause ({thinking_time:.1f}s)...")
         await asyncio.sleep(thinking_time)
         
-        # Decide on action with natural probabilities
+        # Decide on action with enhanced natural probabilities
         action_choice = random.random()
         
-        if action_choice < 0.5 and pages_visited < max_pages:  # 50% - Try to visit new article
-            if reading_pattern['will_use_tabs'] and random.random() < 0.3:
-                print(f"[{session_id}] � Attempting tab-based browsing...")
-                await multi_tab_article_reading(page, session_id)
-                pages_visited += 2  # Count as visiting multiple pages
+        # Enhanced article interaction - 50% chance
+        if action_choice < 0.5 and pages_visited < max_pages:
+            
+            # Decide between single article click, multi-article session, or multi-tab browsing
+            interaction_type = random.random()
+            
+            if interaction_type < 0.3 and reading_pattern['will_use_tabs']:
+                # Multi-tab browsing (30% of article interactions)
+                print(f"[{session_id}] 📑 Attempting multi-tab article browsing...")
+                tab_success = await multi_tab_article_reading(page, session_id)
+                if tab_success:
+                    pages_visited += 3  # Count as visiting multiple pages
+                else:
+                    # Fallback to single article click
+                    success = await smart_click_random_article(page, session_id)
+                    if success:
+                        pages_visited += 1
+                        read_time = random.randint(config.ARTICLE_READING_TIME_MIN, config.ARTICLE_READING_TIME_MAX)
+                        print(f"[{session_id}] 📰 Reading article #{pages_visited} for {read_time}s...")
+                        await simulate_reading_behavior(page, session_id, read_time)
+                        
+            elif interaction_type < 0.6:
+                # Multi-article session (30% of article interactions)
+                print(f"[{session_id}] 📚 Attempting multi-article reading session...")
+                articles_read = await click_multiple_articles(page, session_id)
+                pages_visited += articles_read
+                
             else:
+                # Single article click (40% of article interactions)
                 success = await smart_click_random_article(page, session_id)
                 if success:
                     pages_visited += 1
-                    # Natural article reading time
-                    read_time = article_reading_time()
+                    # Use configurable reading time
+                    read_time = random.randint(config.ARTICLE_READING_TIME_MIN, config.ARTICLE_READING_TIME_MAX)
                     print(f"[{session_id}] 📰 Reading article #{pages_visited} for {read_time}s...")
                     await simulate_reading_behavior(page, session_id, read_time)
                     
                     # Sometimes do wasted actions while reading
                     if random.random() < 0.25:
                         await wasted_click_actions(page, session_id)
+                        
+                    # Sometimes scroll during reading
+                    if random.random() < 0.8:
+                        scroll_time = min(read_time // 3, 30)
+                        await random_scroll(page, scroll_time)
                 else:
                     # No article found - do page exploration instead
                     explore_time = page_scanning_time() 

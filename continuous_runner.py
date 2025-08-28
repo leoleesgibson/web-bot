@@ -3,9 +3,13 @@ import random
 import time
 from bot.browser import BrowserManager
 from bot.actions import search_and_navigate, browse_like_human, direct_navigate_and_browse
+import config
 
-async def run_multiple_sessions_per_ip(proxy_session_number: int, sessions_per_ip: int = 3):
+async def run_multiple_sessions_per_ip(proxy_session_number: int, sessions_per_ip: int | None = None):
     """Run multiple browser sessions simultaneously on the same proxy IP"""
+    if sessions_per_ip is None:
+        sessions_per_ip = config.SESSIONS_PER_IP
+        
     print(f"\n{'='*70}")
     print(f"🌐 Starting Proxy Session {proxy_session_number} - {sessions_per_ip} concurrent mobile browsers")
     print(f"{'='*70}")
@@ -14,7 +18,7 @@ async def run_multiple_sessions_per_ip(proxy_session_number: int, sessions_per_i
     session_tasks = []
     for i in range(sessions_per_ip):
         session_number = f"{proxy_session_number}-{i+1}"
-        session_duration = random.randint(3, 8)  # Each session has its own duration
+        session_duration = random.randint(config.SESSION_DURATION_MIN, config.SESSION_DURATION_MAX)
         task = asyncio.create_task(
             run_single_mobile_session(session_number, session_duration)
         )
@@ -44,15 +48,15 @@ async def run_single_mobile_session(session_number: str, session_duration: int):
         # Start mobile browser session (proxy will be verified inside BrowserManager)
         print(f"[{session_id}] 🚀 Launching mobile browser...")
         browser_manager = BrowserManager(
-            headless=False, 
-            use_proxy=True, 
+            headless=config.HEADLESS_MODE, 
+            use_proxy=config.ENABLE_PROXY, 
             session_id=session_id
         )
         
         page = await browser_manager.start()
 
-        search_query = "website.com.lr"
-        target_url = "https://website.com.lr"
+        search_query = config.SEARCH_QUERY
+        target_url = config.TARGET_URL
 
         # Navigate directly to the target website (no search needed)
         print(f"[{session_id}] 📍 Navigating directly to target website...")
@@ -158,17 +162,17 @@ async def run_continuous_mobile_sessions():
         while True:
             proxy_session_number += 1
             
-            print(f"\n⏳ Preparing proxy session {proxy_session_number} (3 mobile browsers)...")
+            print(f"\n⏳ Preparing proxy session {proxy_session_number} ({config.SESSIONS_PER_IP} mobile browsers)...")
             
-            # Run 3 concurrent mobile sessions on the same proxy IP
+            # Run concurrent mobile sessions on the same proxy IP
             successful, failed = await run_multiple_sessions_per_ip(
                 proxy_session_number, 
-                sessions_per_ip=3
+                sessions_per_ip=config.SESSIONS_PER_IP
             )
             
             total_successful_sessions += successful
             total_failed_sessions += failed
-            total_sessions = proxy_session_number * 3
+            total_sessions = proxy_session_number * config.SESSIONS_PER_IP
             
             # Show summary statistics
             total_time = (time.time() - start_time) / 60
@@ -179,8 +183,8 @@ async def run_continuous_mobile_sessions():
             print(f"   ⏱️ Total runtime: {total_time:.1f} minutes")
             print(f"   📈 Success rate: {(total_successful_sessions/total_sessions)*100:.1f}%")
             
-            # Randomized pause between proxy sessions (30 seconds to 2 minutes)
-            pause_minutes = random.uniform(0.5, 2.0)
+            # Randomized pause between proxy sessions (from config)
+            pause_minutes = random.uniform(config.IP_ROTATION_PAUSE_MIN, config.IP_ROTATION_PAUSE_MAX)
             pause_seconds = pause_minutes * 60
             print(f"\n⏸️ IP rotation pause: {pause_minutes:.1f} minutes before next proxy session...")
             
